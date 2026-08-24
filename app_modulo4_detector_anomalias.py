@@ -18,36 +18,39 @@ tab1, tab2, tab3 = st.tabs(
 )
 
 
-# ---------------------------------------------------------------------------
-# Utilidades compartidas
-# ---------------------------------------------------------------------------
 def generar_datos(n, seed=42):
     rng = np.random.default_rng(seed)
     temperaturas = rng.uniform(15, 40, n)
     humedades = rng.uniform(20, 80, n)
-    return temperaturas, humedades
+    es_fin_de_semana = rng.choice([True, False], n)
+    return temperaturas, humedades, es_fin_de_semana
 
 
-def alarma_logica_loop(temperaturas, humedades, temp_umbral, hum_umbral):
+def alarma_logica_loop(temperaturas, humedades, es_fin_de_semana, temp_umbral, hum_umbral):
     resultados = []
-    for temp, hum in zip(temperaturas, humedades):
-        resultados.append(temp > temp_umbral and hum < hum_umbral)
+    for temp, hum, fin_de_semana in zip(temperaturas, humedades, es_fin_de_semana):
+        resultados.append(
+            temp > temp_umbral and hum < hum_umbral and not fin_de_semana
+        )
     return np.array(resultados)
 
 
-def alarma_logica_vectorizada(temperaturas, humedades, temp_umbral, hum_umbral):
-    return (temperaturas > temp_umbral) & (humedades < hum_umbral)
+def alarma_logica_vectorizada(
+    temperaturas, humedades, es_fin_de_semana, temp_umbral, hum_umbral
+):
+    return (
+        (temperaturas > temp_umbral)
+        & (humedades < hum_umbral)
+        & (~es_fin_de_semana)
+    )
 
 
-# ---------------------------------------------------------------------------
-# Tab 1: Simulación de alarma
-# ---------------------------------------------------------------------------
 with tab1:
     st.subheader("Alarma por regla lógica")
     st.write(
-        "La alarma dispara con una condición fija que tú defines, combinando dos "
+        "La alarma dispara con una condición fija que tú defines, combinando tres "
         "proposiciones con un **AND** lógico: "
-        "*temperatura > umbral* **Y** *humedad < umbral*."
+        "*temperatura > umbral* **Y** *humedad < umbral* **Y NOT** *es_fin_de_semana*."
     )
 
     col_cfg, col_data = st.columns([1, 2])
@@ -57,10 +60,12 @@ with tab1:
         temp_umbral = st.slider("Umbral temperatura (°C) — mayor que", 15, 40, 30)
         hum_umbral = st.slider("Umbral humedad (%) — menor que", 20, 80, 40)
 
-    temps, hums = generar_datos(n)
+    temps, hums, fines_de_semana = generar_datos(n)
 
     with col_cfg:
-        alarmas = alarma_logica_vectorizada(temps, hums, temp_umbral, hum_umbral)
+        alarmas = alarma_logica_vectorizada(
+            temps, hums, fines_de_semana, temp_umbral, hum_umbral
+        )
         st.metric("Alarmas detectadas", f"{alarmas.sum()} / {n}")
 
     with col_data:
@@ -83,14 +88,12 @@ with tab1:
         df = pd.DataFrame({
             "temperatura": temps.round(2),
             "humedad": hums.round(2),
+            "es_fin_de_semana": fines_de_semana,
             "alarma": alarmas,
         })
         st.dataframe(df, use_container_width=True, height=250)
 
 
-# ---------------------------------------------------------------------------
-# Tab 2: Notación Big-O
-# ---------------------------------------------------------------------------
 with tab2:
     st.subheader("¿Por qué importa la complejidad?")
     st.write(
@@ -120,9 +123,6 @@ with tab2:
     )
 
 
-# ---------------------------------------------------------------------------
-# Tab 3: Benchmark en vivo
-# ---------------------------------------------------------------------------
 with tab3:
     st.subheader("Loop vs. NumPy: misma lógica, distinta velocidad real")
     st.write(
@@ -139,22 +139,23 @@ with tab3:
     hum_umbral_b = st.slider("Umbral humedad (%)", 20, 80, 40, key="hum_bench")
 
     if st.button("▶️ Ejecutar benchmark", type="primary"):
-        temps_b, hums_b = generar_datos(n_bench)
+        temps_b, hums_b, fines_b = generar_datos(n_bench)
 
-        # perf_counter tiene mucha más resolución que time.time(), y repetimos
-        # varias veces porque la versión vectorizada puede ser demasiado rápida
-        # para medirse de forma confiable en una sola corrida.
         repeticiones_loop = 1
         repeticiones_vec = 20
 
         inicio = time.perf_counter()
         for _ in range(repeticiones_loop):
-            alarma_logica_loop(temps_b, hums_b, temp_umbral_b, hum_umbral_b)
+            alarma_logica_loop(
+                temps_b, hums_b, fines_b, temp_umbral_b, hum_umbral_b
+            )
         t_loop = (time.perf_counter() - inicio) / repeticiones_loop
 
         inicio = time.perf_counter()
         for _ in range(repeticiones_vec):
-            alarma_logica_vectorizada(temps_b, hums_b, temp_umbral_b, hum_umbral_b)
+            alarma_logica_vectorizada(
+                temps_b, hums_b, fines_b, temp_umbral_b, hum_umbral_b
+            )
         t_vec = (time.perf_counter() - inicio) / repeticiones_vec
 
         col1, col2, col3 = st.columns(3)
@@ -174,9 +175,11 @@ with tab3:
         )
 
         fig3, ax3 = plt.subplots(figsize=(5, 3.5))
-        ax3.bar(["Loop (Python)", "NumPy (vectorizado)"],
-                [t_loop * 1000, t_vec * 1000],
-                color=["indianred", "seagreen"])
+        ax3.bar(
+            ["Loop (Python)", "NumPy (vectorizado)"],
+            [t_loop * 1000, t_vec * 1000],
+            color=["indianred", "seagreen"],
+        )
         ax3.set_ylabel("Tiempo (milisegundos)")
         ax3.grid(alpha=0.3, axis="y")
         st.pyplot(fig3)
