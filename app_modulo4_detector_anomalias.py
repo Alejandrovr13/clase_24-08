@@ -25,18 +25,43 @@ def generar_datos(n, seed=42):
     rng = np.random.default_rng(seed)
     temperaturas = rng.uniform(15, 40, n)
     humedades = rng.uniform(20, 80, n)
-    return temperaturas, humedades
+    niveles_bateria = rng.uniform(5, 100, n)
+    return temperaturas, humedades, niveles_bateria
 
 
-def alarma_logica_loop(temperaturas, humedades, temp_umbral, hum_umbral):
+def alarma_logica_loop(
+    temperaturas,
+    humedades,
+    niveles_bateria,
+    temp_umbral,
+    hum_umbral,
+    bateria_umbral,
+):
     resultados = []
-    for temp, hum in zip(temperaturas, humedades):
-        resultados.append(temp > temp_umbral and hum < hum_umbral)
+    for temp, hum, bateria in zip(
+        temperaturas, humedades, niveles_bateria
+    ):
+        resultados.append(
+            temp > temp_umbral
+            and hum < hum_umbral
+            and bateria > bateria_umbral
+        )
     return np.array(resultados)
 
 
-def alarma_logica_vectorizada(temperaturas, humedades, temp_umbral, hum_umbral):
-    return (temperaturas > temp_umbral) & (humedades < hum_umbral)
+def alarma_logica_vectorizada(
+    temperaturas,
+    humedades,
+    niveles_bateria,
+    temp_umbral,
+    hum_umbral,
+    bateria_umbral,
+):
+    return (
+        (temperaturas > temp_umbral)
+        & (humedades < hum_umbral)
+        & (niveles_bateria > bateria_umbral)
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -45,9 +70,9 @@ def alarma_logica_vectorizada(temperaturas, humedades, temp_umbral, hum_umbral):
 with tab1:
     st.subheader("Alarma por regla lógica")
     st.write(
-        "La alarma dispara con una condición fija que tú defines, combinando dos "
+        "La alarma dispara con una condición fija que tú defines, combinando tres "
         "proposiciones con un **AND** lógico: "
-        "*temperatura > umbral* **Y** *humedad < umbral*."
+        "*temperatura > umbral* **Y** *humedad < umbral* **Y** *nivel de batería > umbral*."
     )
 
     col_cfg, col_data = st.columns([1, 2])
@@ -56,22 +81,40 @@ with tab1:
         n = st.slider("Número de lecturas (n)", 50, 5000, 500, step=50)
         temp_umbral = st.slider("Umbral temperatura (°C) — mayor que", 15, 40, 30)
         hum_umbral = st.slider("Umbral humedad (%) — menor que", 20, 80, 40)
+        bateria_umbral = st.slider(
+            "Umbral batería (%) — mayor que", 0, 100, 20
+        )
 
-    temps, hums = generar_datos(n)
+    temps, hums, baterias = generar_datos(n)
 
     with col_cfg:
-        alarmas = alarma_logica_vectorizada(temps, hums, temp_umbral, hum_umbral)
+        alarmas = alarma_logica_vectorizada(
+            temps,
+            hums,
+            baterias,
+            temp_umbral,
+            hum_umbral,
+            bateria_umbral,
+        )
         st.metric("Alarmas detectadas", f"{alarmas.sum()} / {n}")
 
     with col_data:
         fig, ax = plt.subplots(figsize=(6, 4.5))
         ax.scatter(
-            temps[~alarmas], hums[~alarmas],
-            c="steelblue", alpha=0.5, label="Normal", s=15,
+            temps[~alarmas],
+            hums[~alarmas],
+            c="steelblue",
+            alpha=0.5,
+            label="Normal",
+            s=15,
         )
         ax.scatter(
-            temps[alarmas], hums[alarmas],
-            c="crimson", alpha=0.8, label="Alarma / anomalía", s=25,
+            temps[alarmas],
+            hums[alarmas],
+            c="crimson",
+            alpha=0.8,
+            label="Alarma / anomalía",
+            s=25,
         )
         ax.set_xlabel("Temperatura (°C)")
         ax.set_ylabel("Humedad (%)")
@@ -80,11 +123,14 @@ with tab1:
         st.pyplot(fig)
 
     with st.expander("Ver datos y lógica aplicada"):
-        df = pd.DataFrame({
-            "temperatura": temps.round(2),
-            "humedad": hums.round(2),
-            "alarma": alarmas,
-        })
+        df = pd.DataFrame(
+            {
+                "temperatura": temps.round(2),
+                "humedad": hums.round(2),
+                "nivel_bateria": baterias.round(2),
+                "alarma": alarmas,
+            }
+        )
         st.dataframe(df, use_container_width=True, height=250)
 
 
@@ -104,9 +150,21 @@ with tab2:
 
     fig2, ax2 = plt.subplots(figsize=(8, 5))
     ax2.plot(n_valores, np.ones_like(n_valores), label="O(1) — constante")
-    ax2.plot(n_valores, n_valores, label="O(n) — lineal (nuestro detector)")
-    ax2.plot(n_valores, n_valores * np.log2(np.maximum(n_valores, 2)), label="O(n log n)")
-    ax2.plot(n_valores, n_valores ** 2, label="O(n²) — cuadrática")
+    ax2.plot(
+        n_valores,
+        n_valores,
+        label="O(n) — lineal (nuestro detector)",
+    )
+    ax2.plot(
+        n_valores,
+        n_valores * np.log2(np.maximum(n_valores, 2)),
+        label="O(n log n)",
+    )
+    ax2.plot(
+        n_valores,
+        n_valores ** 2,
+        label="O(n²) — cuadrática",
+    )
     ax2.set_xlabel("Tamaño de los datos (n)")
     ax2.set_ylabel("Operaciones (teórico)")
     ax2.legend()
@@ -135,37 +193,88 @@ with tab3:
         options=[1_000, 10_000, 100_000, 500_000, 1_000_000],
         value=100_000,
     )
-    temp_umbral_b = st.slider("Umbral temperatura (°C)", 15, 40, 30, key="temp_bench")
-    hum_umbral_b = st.slider("Umbral humedad (%)", 20, 80, 40, key="hum_bench")
+
+    temp_umbral_b = st.slider(
+        "Umbral temperatura (°C)",
+        15,
+        40,
+        30,
+        key="temp_bench",
+    )
+
+    hum_umbral_b = st.slider(
+        "Umbral humedad (%)",
+        20,
+        80,
+        40,
+        key="hum_bench",
+    )
+
+    bateria_umbral_b = st.slider(
+        "Umbral batería (%)",
+        0,
+        100,
+        20,
+        key="bateria_bench",
+    )
 
     if st.button("▶️ Ejecutar benchmark", type="primary"):
-        temps_b, hums_b = generar_datos(n_bench)
+        temps_b, hums_b, baterias_b = generar_datos(n_bench)
 
-        # perf_counter tiene mucha más resolución que time.time(), y repetimos
-        # varias veces porque la versión vectorizada puede ser demasiado rápida
-        # para medirse de forma confiable en una sola corrida.
         repeticiones_loop = 1
         repeticiones_vec = 20
 
         inicio = time.perf_counter()
+
         for _ in range(repeticiones_loop):
-            alarma_logica_loop(temps_b, hums_b, temp_umbral_b, hum_umbral_b)
+            alarma_logica_loop(
+                temps_b,
+                hums_b,
+                baterias_b,
+                temp_umbral_b,
+                hum_umbral_b,
+                bateria_umbral_b,
+            )
+
         t_loop = (time.perf_counter() - inicio) / repeticiones_loop
 
         inicio = time.perf_counter()
+
         for _ in range(repeticiones_vec):
-            alarma_logica_vectorizada(temps_b, hums_b, temp_umbral_b, hum_umbral_b)
+            alarma_logica_vectorizada(
+                temps_b,
+                hums_b,
+                baterias_b,
+                temp_umbral_b,
+                hum_umbral_b,
+                bateria_umbral_b,
+            )
+
         t_vec = (time.perf_counter() - inicio) / repeticiones_vec
 
         col1, col2, col3 = st.columns(3)
-        col1.metric("Tiempo con loop", f"{t_loop*1000:.3f} ms")
-        col2.metric("Tiempo con NumPy", f"{t_vec*1000:.3f} ms")
+
+        col1.metric(
+            "Tiempo con loop",
+            f"{t_loop * 1000:.3f} ms",
+        )
+
+        col2.metric(
+            "Tiempo con NumPy",
+            f"{t_vec * 1000:.3f} ms",
+        )
 
         if t_vec > 0:
             speedup = t_loop / t_vec
-            col3.metric("NumPy es más rápido por", f"{speedup:,.0f}x")
+            col3.metric(
+                "NumPy es más rápido por",
+                f"{speedup:,.0f}x",
+            )
         else:
-            col3.metric("NumPy es más rápido por", "demasiado rápido para medir")
+            col3.metric(
+                "NumPy es más rápido por",
+                "demasiado rápido para medir",
+            )
 
         st.caption(
             f"Tiempo con loop promediado sobre {repeticiones_loop} corrida(s); "
@@ -174,11 +283,18 @@ with tab3:
         )
 
         fig3, ax3 = plt.subplots(figsize=(5, 3.5))
-        ax3.bar(["Loop (Python)", "NumPy (vectorizado)"],
-                [t_loop * 1000, t_vec * 1000],
-                color=["indianred", "seagreen"])
+
+        ax3.bar(
+            ["Loop (Python)", "NumPy (vectorizado)"],
+            [t_loop * 1000, t_vec * 1000],
+            color=["indianred", "seagreen"],
+        )
+
         ax3.set_ylabel("Tiempo (milisegundos)")
         ax3.grid(alpha=0.3, axis="y")
         st.pyplot(fig3)
+
     else:
-        st.caption("Ajusta los parámetros y presiona **Ejecutar benchmark** para ver el resultado.")
+        st.caption(
+            "Ajusta los parámetros y presiona **Ejecutar benchmark** para ver el resultado."
+        )
